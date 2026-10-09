@@ -1,5 +1,3 @@
-
-pyTelegramBotAPI
+python-telegram-bot==20.7
 yfinance
-lxml
-requests
+pandas
