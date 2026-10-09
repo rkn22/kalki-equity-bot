@@ -1,44 +1,41 @@
 import os
-import threading
-from flask import Flask
-import telebot
-import yfinance as yf
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-app = Flask(__name__)
-@app.route('/')
-def home():
-    return "🔱 KALKI Bot Live!"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-bot = telebot.TeleBot(BOT_TOKEN)
+logging.basicConfig(level=logging.INFO)
 
-STOCKS = ["TCS.NS","RELIANCE.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS"]
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Jai Shree Kalki! Bot Live Achhi ✅\n/price INFY - Price dekhba pain")
 
-@bot.message_handler(commands=['start'])
-def start(m):
-    bot.reply_to(m, "🔱 KALKI Ready!\n/equity - Report")
-
-@bot.message_handler(commands=['equity'])
-def equity(m):
-    msg = "🔱 *KALKI Equity*\n\n"
-    for s in STOCKS:
-        try:
-            d = yf.download(s, period="2d", progress=False)
-            price = float(d['Close'].iloc[-1])
-            prev = float(d['Close'].iloc[-2])
-            chg = ((price-prev)/prev)*100
-            emo = "🟢" if chg>0 else "🔴"
-            msg += f"{emo} {s.replace('.NS','')}: {price:.1f} ({chg:+.2f}%)\n"
-        except:
-            msg += f"{s}: Error\n"
-    bot.send_message(m.chat.id, msg, parse_mode="Markdown")
-
-def run_bot():
-    print("Bot Polling Started...")
-    bot.infinity_polling()
-
-threading.Thread(target=run_bot, daemon=True).start()
+async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        import yfinance as yf
+        if not context.args:
+            await update.message.reply_text("Ex: /price INFY")
+            return
+        symbol = context.args[0].upper()
+        if not symbol.endswith(".NS"):
+            symbol = symbol + ".NS"
+        stock = yf.Ticker(symbol)
+        data = stock.history(period="1d")
+        if data.empty:
+            await update.message.reply_text(f"{symbol} Data Miluni")
+            return
+        price = round(data['Close'].iloc[-1], 2)
+        await update.message.reply_text(f"📈 {symbol}: Rs {price}")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    if not BOT_TOKEN:
+        print("ERROR: BOT_TOKEN not found!")
+        exit(1)
+    print("KALKI Bot Started...")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("price", price))
+    app.run_polling()
