@@ -1,19 +1,14 @@
+from flask import Flask
+import threading
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+app_flask = Flask(__name__)
+@app_flask.route('/')
+def home():
+    return "KALKI Bot Running!"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Jai Shree Kalki! Bot Live ✅")
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app_flask.run(host='0.0.0.0', port=port)
 
-async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Price Feature Asiba...")
-
-if __name__ == "__main__":
-    print("KALKI Bot Starting...")
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("price", price))
-    print("KALKI Bot Started...")
-    app.run_polling()
+threading.Thread(target=run_flask).start()
