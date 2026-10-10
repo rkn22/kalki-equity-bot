@@ -1,21 +1,54 @@
 import os
 import datetime
+import threading
+from flask import Flask
 import yfinance as yf
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-CHAT_IDS = set([CHAT_ID] if CHAT_ID else [])
+CHAT_IDS = set([int(CHAT_ID)] if CHAT_ID else [])
 
 TODAY_CALLS = []
 WEEKLY_PNL = []
 ALERTED = set()
 
-# --- TUMA PURUNA FUNCTIONS ETHI THIBA ---
-# daily_auto function already thiba ta rakha
+# Keep Alive Server for Render
+keep_app = Flask('')
+@keep_app.route('/')
+def home(): return "JAI SHRI KALKI LIVE 🟢"
+def run_flask(): keep_app.run(host='0.0.0.0', port=8080)
 
-# --- NUA ADD KARIBA FUNCTIONS ---
+def get_today_calls():
+    # Tuma puruna logic ethi thiba - Example:
+    return [
+        ["BAJFINANCE", 7200, 7100, 7350, "NBFC Support", 1],
+        ["MARUTI", 12800, 12650, 13050, "Auto Breakout", 1],
+        ["HDFCBANK", 1680, 1665, 1710, "Range Breakout", 3],
+    ]
+
+async def daily_auto(context: ContextTypes.DEFAULT_TYPE):
+    global TODAY_CALLS, ALERTED
+    ALERTED.clear()
+    TODAY_CALLS = get_today_calls()
+    if not TODAY_CALLS: return
+    msg = "🔥 TODAY'S 3 INTRADAY:\n\n"
+    for i, s in enumerate(TODAY_CALLS, 1):
+        msg += f"{i}. {s[0]} Buy Above {s[1]} | SL {s[2]} | TGT {s[3]}\nLogic: {s[4]}\nQty: {s[5]} Shares\n\n"
+    msg += "Risk: ₹90-120 per trade\nCapital: 15K"
+    for cid in list(CHAT_IDS):
+        try: await context.bot.send_message(chat_id=cid, text=msg)
+        except: pass
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    CHAT_IDS.add(update.effective_chat.id)
+    await update.message.reply_text("JAI SHRI KALKI! Bot Live 🟢 /today dia!")
+
+async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    CHAT_IDS.add(update.effective_chat.id)
+    await daily_auto(context)
+
 async def live_alert(context: ContextTypes.DEFAULT_TYPE):
     if not TODAY_CALLS: return
     for s in TODAY_CALLS:
@@ -29,8 +62,7 @@ async def live_alert(context: ContextTypes.DEFAULT_TYPE):
             elif price <= s[2]:
                 msg = f"🛑 SL HIT!\n{s[0]} {s[1]} -> {price:.1f}\nLoss: ₹{(price-s[1])*s[5]:.0f}\nEXIT KARO!"
                 ALERTED.add(s[0])
-            else:
-                continue
+            else: continue
             for cid in list(CHAT_IDS):
                 try: await context.bot.send_message(chat_id=cid, text=msg)
                 except: pass
@@ -49,8 +81,7 @@ async def final_report(context: ContextTypes.DEFAULT_TYPE):
             total += pnl
             status = "✅ TGT" if close >= s[3] else "❌ SL" if close <= s[2] else "⚠️ CLOSE"
             msg += f"{s[0]}: {s[1]}->{close:.1f} {status} | ₹{pnl:.0f}\n"
-        except:
-            msg += f"{s[0]}: Data Nahi\n"
+        except: msg += f"{s[0]}: Data Nahi\n"
     WEEKLY_PNL.append(total)
     msg += f"\n💰 TODAY P&L: ₹{total:.0f}\nJAI SHRI KALKI!"
     for cid in list(CHAT_IDS):
@@ -66,14 +97,15 @@ async def weekly_report(context: ContextTypes.DEFAULT_TYPE):
         except: pass
     WEEKLY_PNL.clear()
 
-# Tuma main() function bhitare last re add kara
 def main():
+    # Flask Start
+    threading.Thread(target=run_flask).start()
+
     app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("today", today))
 
-    # Puruna handlers
-    # app.add_handler(CommandHandler("start", start)) etc
-
-    # NUA JOB QUEUE - EHI 3 LINE ADD KARA
+    app.job_queue.run_daily(daily_auto, time=datetime.time(hour=3, minute=45, tzinfo=datetime.timezone.utc), days=(0,1,2,3,4))
     app.job_queue.run_repeating(live_alert, interval=300, first=10)
     app.job_queue.run_daily(final_report, time=datetime.time(hour=10, minute=0, tzinfo=datetime.timezone.utc), days=(0,1,2,3,4))
     app.job_queue.run_daily(weekly_report, time=datetime.time(hour=10, minute=30, tzinfo=datetime.timezone.utc), days=(5,))
