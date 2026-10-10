@@ -1,8 +1,21 @@
-# Same Old Code Upara Same Raha, Tala re Eta Add Kara
+import os
+import datetime
+import yfinance as yf
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+CHAT_IDS = set([CHAT_ID] if CHAT_ID else [])
+
+TODAY_CALLS = []
 WEEKLY_PNL = []
 ALERTED = set()
 
+# --- TUMA PURUNA FUNCTIONS ETHI THIBA ---
+# daily_auto function already thiba ta rakha
+
+# --- NUA ADD KARIBA FUNCTIONS ---
 async def live_alert(context: ContextTypes.DEFAULT_TYPE):
     if not TODAY_CALLS: return
     for s in TODAY_CALLS:
@@ -47,18 +60,25 @@ async def final_report(context: ContextTypes.DEFAULT_TYPE):
 async def weekly_report(context: ContextTypes.DEFAULT_TYPE):
     if not WEEKLY_PNL: return
     total = sum(WEEKLY_PNL)
-    msg = f"📈 WEEKLY REPORT\n\n"
-    msg += f"Total Trades: {len(WEEKLY_PNL)} Days\n"
-    msg += f"Total P&L: ₹{total:.0f}\n"
-    msg += f"Avg/Day: ₹{total/len(WEEKLY_PNL):.0f}\n\n"
-    msg += "JAI SHRI KALKI! 🙏"
+    msg = f"📈 WEEKLY REPORT\n\nTotal Trades: {len(WEEKLY_PNL)} Days\nTotal P&L: ₹{total:.0f}\nAvg/Day: ₹{total/len(WEEKLY_PNL):.0f}\n\nJAI SHRI KALKI! 🙏"
     for cid in list(CHAT_IDS):
         try: await context.bot.send_message(chat_id=cid, text=msg)
         except: pass
     WEEKLY_PNL.clear()
 
-# Job Queue Last re:
-# app.job_queue.run_daily(daily_auto, time=datetime.time(hour=3, minute=45, tzinfo=datetime.timezone.utc), days=(0,1,2,3,4))
-# app.job_queue.run_daily(final_report, time=datetime.time(hour=10, minute=0, tzinfo=datetime.timezone.utc), days=(0,1,2,3,4))
-# app.job_queue.run_repeating(live_alert, interval=300, first=10) # 5 Min
-# app.job_queue.run_daily(weekly_report, time=datetime.time(hour=10, minute=30, tzinfo=datetime.timezone.utc), days=(5,)) # Saturday 4 PM
+# Tuma main() function bhitare last re add kara
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    # Puruna handlers
+    # app.add_handler(CommandHandler("start", start)) etc
+
+    # NUA JOB QUEUE - EHI 3 LINE ADD KARA
+    app.job_queue.run_repeating(live_alert, interval=300, first=10)
+    app.job_queue.run_daily(final_report, time=datetime.time(hour=10, minute=0, tzinfo=datetime.timezone.utc), days=(0,1,2,3,4))
+    app.job_queue.run_daily(weekly_report, time=datetime.time(hour=10, minute=30, tzinfo=datetime.timezone.utc), days=(5,))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
