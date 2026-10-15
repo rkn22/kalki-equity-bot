@@ -8,7 +8,7 @@ import asyncio
 import pandas as pd
 import numpy as np
 from flask import Flask
-import yfinance as yf
+from nselib import capital_market
 from nsepython import nse_eq, nse_quote_ltp, nse_optionchain_scrapper, pcr
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -99,15 +99,30 @@ def run_flask():
 
 def fetch_nse_historical_data(symbol):
     try:
-        ticker = symbol if symbol.endswith(".NS") else symbol + ".NS"
-        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        to_date = datetime.datetime.now().strftime("%d-%m-%Y")
+        from_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime("%d-%m-%Y")
+        
+        df = capital_market.price_volume_data(symbol=symbol, from_date=from_date, to_date=to_date)
         if df is None or df.empty:
             return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        
+        df['Date'] = pd.to_datetime(df['Date'], format='%d-%m-%Y')
+        df = df.sort_values('Date').set_index('Date')
+        
+        for col in ['OPEN', 'HIGH', 'LOW', 'CLOSE', 'TOTTRDQTY']:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(',', '').astype(float)
+                
+        df = df.rename(columns={
+            'OPEN': 'Open',
+            'HIGH': 'High',
+            'LOW': 'Low',
+            'CLOSE': 'Close',
+            'TOTTRDQTY': 'Volume'
+        })
         return df
     except Exception as e:
-        print(f"Data fetch error for {symbol}: {e}")
+        print(f"NSELib Data fetch error for {symbol}: {e}")
         return None
 
 def check_open_interest_pcr(symbol):
@@ -123,13 +138,23 @@ def check_open_interest_pcr(symbol):
 
 def check_market_breadth():
     try:
-        df = fetch_nse_historical_data("^NSEI")
-        if df is None:
+        to_date = datetime.datetime.now().strftime("%d-%m-%Y")
+        from_date = (datetime.datetime.now() - datetime.timedelta(days=60)).strftime("%d-%m-%Y")
+        df = capital_market.index_data(index='Nifty 50', from_date=from_date, to_date=to_date)
+        if df is None or df.empty:
             return True
-        close = df['Close']
+        
+        close_col = 'CLOSING' if 'CLOSING' in df.columns else 'Close'
+        for col in df.columns:
+            if 'CLOSE' in col.upper():
+                close_col = col
+                break
+                
+        close = df[close_col].astype(str).str.replace(',', '').astype(float)
         ema_20 = close.ewm(span=20, adjust=False).mean()
         return float(close.iloc[-1]) >= float(ema_20.iloc[-1])
-    except Exception:
+    except Exception as e:
+        print(f"Market breadth error: {e}")
         return True
 
 def calculate_indicators_and_atr(df):
@@ -575,7 +600,6 @@ def main():
         print("ERROR: BOT_TOKEN is missing!")
         return
 
-    # Extended request timeout configuration to prevent TimedOut errors on GitHub Actions
     custom_request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0, pool_timeout=30.0)
 
     if RUN_MODE in ["MONTHLY", "INTRADAY", "BTST"]:
