@@ -5,7 +5,19 @@ on:
     - cron: '30 3 * * 1-5'   # Morning Swing Call (9:00 AM IST)
     - cron: '45 3 * * 1-5'   # Intraday Calls (9:15 AM IST)
     - cron: '45 9 * * 1-5'   # BTST Call (3:15 PM IST)
-  workflow_dispatch:          # Allows manual trigger from GitHub UI
+  
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: 'Select Trading Bot Mode to Execute'
+        required: true
+        default: 'ALL'
+        type: choice
+        options:
+          - ALL
+          - MONTHLY
+          - INTRADAY
+          - BTST
 
 jobs:
   run-bot:
@@ -26,24 +38,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Execute 1-Monthly Swing Call Analysis
+      - name: Execute Kalki Trading Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          RUN_MODE: "MONTHLY"
-        run: python main.py
-
-      - name: Execute 2-Intraday Cash Calls Analysis
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-          RUN_MODE: "INTRADAY"
-        run: python main.py
-
-      - name: Execute 1-BTST Call Analysis
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-          RUN_MODE: "BTST"
+          # If triggered manually via GitHub UI, use the selected input. Otherwise default to ALL for scheduled runs.
+          RUN_MODE: ${{ github.event.inputs.run_mode || 'ALL' }}
         run: python main.py
         
