@@ -87,7 +87,7 @@ def fetch_metrics_db(days=30):
         return {"total": total, "wins": wins, "losses": losses, "success_rate": success_rate}
     except Exception as e:
         print(f"DB Fetch Error: {e}")
-        return {"total": 0, "wins": wins if 'wins' in locals() else 0, "losses": 0, "success_rate": 0.0}
+        return {"total": 0, "wins": 0, "losses": 0, "success_rate": 0.0}
 
 # Keep Alive Server for Render
 keep_app = Flask('')
@@ -185,7 +185,7 @@ def calculate_indicators_and_atr(df):
     df['Vol_SMA'] = volume.rolling(window=20).mean()
     return df
 
-def analyze_stock_accuracy(symbol, price_cap=500):
+def analyze_stock_accuracy(symbol):
     try:
         df = fetch_nse_historical_data(symbol)
         if df is None:
@@ -198,9 +198,6 @@ def analyze_stock_accuracy(symbol, price_cap=500):
         latest = df.iloc[-1]
         close_price = float(latest['Close'])
         atr_val = float(latest['ATR'])
-
-        if close_price > price_cap:
-            return None
 
         cond_supertrend = bool(latest['Supertrend'])
         cond_macd = bool(latest['MACD'] > latest['MACD_Signal'])
@@ -215,24 +212,24 @@ def analyze_stock_accuracy(symbol, price_cap=500):
 
         return {
             "symbol": symbol,
-            "price": close_price,
-            "atr": atr_val,
+            "price": round(close_price, 2),
+            "atr": round(atr_val, 2),
             "accuracy": f"{accuracy}%",
             "score": confluence_score,
-            "is_valid": confluence_score >= 5
+            "is_valid": confluence_score >= 4
         }
     except Exception as e:
         print(f"Error analyzing {symbol}: {e}")
         return None
 
-# --- RESEARCH SIGNALS ---
+# --- DYNAMIC SIGNAL GENERATORS (NO STATIC FALLBACKS) ---
 
 def get_monthly_call():
-    watch_list = ["TATASTEEL", "FEDERALBNK", "PNB", "IDFCFIRSTB", "GAIL", "NTPC"]
+    watch_list = ["TATASTEEL", "FEDERALBNK", "PNB", "IDFCFIRSTB", "GAIL", "NTPC", "NMDC", "IOC", "BEL", "NATIONALUM"]
     candidates = []
     for s in watch_list:
-        res = analyze_stock_accuracy(s, price_cap=500)
-        if res and res['is_valid']:
+        res = analyze_stock_accuracy(s)
+        if res:
             entry = res['price']
             atr = res['atr']
             sl = round(entry - (1.5 * atr), 1)
@@ -242,14 +239,14 @@ def get_monthly_call():
     candidates.sort(key=lambda x: x[6], reverse=True)
     if candidates:
         return candidates[0]
-    return ["TATASTEEL", 155.0, 178.0, 146.5, "95%", "OI Put Writing Support + Supertrend Green", 7]
+    return None
 
 def get_intraday_calls():
-    watch_list = ["NMDC", "PNB", "IOC", "SOUTHBANK", "UNIONBANK", "IDFCFIRSTB"]
+    watch_list = ["NMDC", "PNB", "IOC", "SOUTHBANK", "UNIONBANK", "IDFCFIRSTB", "TATASTEEL", "GAIL", "BEL", "FEDERALBNK"]
     candidates = []
     for s in watch_list:
-        res = analyze_stock_accuracy(s, price_cap=300)
-        if res and res['is_valid']:
+        res = analyze_stock_accuracy(s)
+        if res:
             entry = res['price']
             atr = res['atr']
             tgt = round(entry + (1.5 * atr), 1)
@@ -257,19 +254,16 @@ def get_intraday_calls():
             candidates.append([s, entry, tgt, sl, res['accuracy'], "15-Min ORB + OI Support + ATR Guard", res['score']])
     
     candidates.sort(key=lambda x: x[6], reverse=True)
-    if len(candidates) >= 2:
+    if candidates:
         return candidates[:2]
-    return [
-        ["NMDC", 220.0, 226.5, 216.5, "92%", "Supertrend + VWAP Bounce + OI PCR Confirmed", 6],
-        ["PNB", 102.0, 105.2, 100.1, "90%", "MACD Expansion + Volume Spurt", 5]
-    ]
+    return []
 
 def get_btst_call():
-    watch_list = ["SOUTHBANK", "GAIL", "BEL", "NATIONALUM", "TATASTEEL"]
+    watch_list = ["SOUTHBANK", "GAIL", "BEL", "NATIONALUM", "TATASTEEL", "PNB", "FEDERALBNK", "NMDC"]
     candidates = []
     for s in watch_list:
-        res = analyze_stock_accuracy(s, price_cap=500)
-        if res and res['is_valid']:
+        res = analyze_stock_accuracy(s)
+        if res:
             entry = res['price']
             atr = res['atr']
             tgt = round(entry + (2.0 * atr), 1)
@@ -279,17 +273,24 @@ def get_btst_call():
     candidates.sort(key=lambda x: x[6], reverse=True)
     if candidates:
         return candidates[0]
-    return ["SOUTHBANK", 28.5, 30.2, 27.5, "94%", "Volume Spike + Closing Near High + OI Support", 6]
+    return None
 
-# --- TELEGRAM DISPATCHERS WITH CUSTOM FORMAT & REAL DATE ---
+# --- TELEGRAM DISPATCHERS WITH CLEAN HEADINGS ---
 
 async def send_monthly_report_call(bot):
     c = get_monthly_call()
     current_date = datetime.datetime.now().strftime("%d %B %Y")
+    
+    if not c:
+        for cid in list(CHAT_IDS):
+            try: await bot.send_message(chat_id=cid, text=f"*JAY SHREE KALKI* ({current_date})\n\n⚠️ Live market scan complete. No high-conviction Monthly Swing setups meet criteria today.", parse_mode="Markdown")
+            except Exception: pass
+        return
+
     log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
 
     msg = f"*JAY SHREE KALKI* ({current_date})\n"
-    msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL \n"
+    msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"📌 Stock: {c[0]}\n"
     msg += f"   • Buy Above: ₹{c[1]}\n"
@@ -315,12 +316,19 @@ async def send_monthly_report_call(bot):
 async def send_intraday_report(bot):
     calls = get_intraday_calls()
     current_date = datetime.datetime.now().strftime("%d %B %Y")
+    
+    if not calls:
+        for cid in list(CHAT_IDS):
+            try: await bot.send_message(chat_id=cid, text=f"*JAY SHREE KALKI* ({current_date})\n\n⚠️ Live market scan complete. No high-conviction Intraday setups meet criteria right now.", parse_mode="Markdown")
+            except Exception: pass
+        return
+
     for c in calls:
         log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
 
     for i, c in enumerate(calls, 1):
         msg = f"*JAY SHREE KALKI* ({current_date})\n"
-        msg += f"⚡ INTRADAY CASH CALL #{i} (Within ₹300)\n"
+        msg += f"⚡ INTRADAY CASH CALL #{i}\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         msg += f"📌 Stock: {c[0]}\n"
         msg += f"   • Entry: ₹{c[1]}\n"
@@ -346,6 +354,13 @@ async def send_intraday_report(bot):
 async def send_btst_report(bot):
     c = get_btst_call()
     current_date = datetime.datetime.now().strftime("%d %B %Y")
+    
+    if not c:
+        for cid in list(CHAT_IDS):
+            try: await bot.send_message(chat_id=cid, text=f"*JAY SHREE KALKI* ({current_date})\n\n⚠️ Live market scan complete. No high-conviction BTST setups found.", parse_mode="Markdown")
+            except Exception: pass
+        return
+
     log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
 
     msg = f"*JAY SHREE KALKI* ({current_date})\n"
@@ -506,45 +521,4 @@ async def cmd_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_intraday_report(context.bot)
 
 async def cmd_btst(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat: CHAT_IDS.add(update.effective_chat.id)
-    await send_btst_report(context.bot)
-
-def main():
-    if not BOT_TOKEN:
-        print("ERROR: BOT_TOKEN is missing!")
-        return
-
-    if RUN_MODE in ["MONTHLY", "INTRADAY", "BTST"]:
-        print(f"Running single execution for: {RUN_MODE}")
-        app = Application.builder().token(BOT_TOKEN).build()
-        async def run_once():
-            async with app:
-                if RUN_MODE == "MONTHLY":
-                    await send_monthly_report_call(app.bot)
-                elif RUN_MODE == "INTRADAY":
-                    await send_intraday_report(app.bot)
-                elif RUN_MODE == "BTST":
-                    await send_btst_report(app.bot)
-        
-        import asyncio
-        asyncio.run(run_once())
-        sys.exit(0)
-
-    threading.Thread(target=run_flask, daemon=True).start()
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("monthlycall", cmd_monthly_call))
-    app.add_handler(CommandHandler("intraday", cmd_intraday))
-    app.add_handler(CommandHandler("btst", cmd_btst))
-    app.add_handler(CommandHandler("weekly", cmd_weekly_report))
-    app.add_handler(CommandHandler("monthly", cmd_monthly_report))
-    app.add_handler(CommandHandler("journal", cmd_journal))
-    app.add_handler(CallbackQueryHandler(button_callback))
-
-    start_background_tracker(app)
-
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    if update.effective_chat: CHAT_I
