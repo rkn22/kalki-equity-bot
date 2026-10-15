@@ -1,3 +1,7 @@
-python-telegram-bot[job-queue]
-yfinance
-flask
+nsepython==1.1.2
+yfinance==0.2.38
+pandas==2.2.1
+numpy==1.26.4
+flask==3.0.2
+python-telegram-bot==20.8
+requests==2.31.0
