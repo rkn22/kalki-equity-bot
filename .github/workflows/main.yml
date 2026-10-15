@@ -1,20 +1,32 @@
-name: kalki-equity-bot
+name: Kalki Equity Bot Workflows
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  schedule:
-    - cron: '45 3 * * 1-5' # Monday-Friday 9:15 AM IST
   workflow_dispatch:
+    inputs:
+      action_type:
+        description: 'Select Call or Report Type to Run'
+        required: true
+        default: '1-monthly-call'
+        type: choice
+        options:
+          - 1-monthly-call
+          - 2-intraday-calls
+          - 1-btst-call
+  schedule:
+    - cron: '45 3 * * 1-5'  # 09:15 AM IST (Morning Calls)
+    - cron: '45 9 * * 1-5'  # 03:15 PM IST (BTST Call)
+
+concurrency:
+  group: kalki-bot-execution
+  cancel-in-progress: false
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
+
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -23,16 +35,37 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run Kalki Bot
+      # 1. Monthly Call Execution
+      - name: Execute 1-Monthly Swing Call Analysis
+        if: "${{ inputs.action_type == '1-monthly-call' }}"
         env:
-          API_KEY: ${{ secrets.API_KEY }}
-          API_SECRET: ${{ secrets.API_SECRET }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          RUN_MODE: "MONTHLY"
         run: |
           python main.py
-          # agar tumhara entry file alag hai jaise bot.py ya app.py to yaha naam change kar dena
+
+      # 2. Intraday Calls Execution
+      - name: Execute 2-Intraday Cash Calls Analysis
+        if: "${{ github.event_name == 'schedule' || inputs.action_type == '2-intraday-calls' }}"
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          RUN_MODE: "INTRADAY"
+        run: |
+          python main.py
+
+      # 3. BTST Call Execution
+      - name: Execute 1-BTST Call Analysis
+        if: "${{ inputs.action_type == '1-btst-call' }}"
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          RUN_MODE: "BTST"
+        run: |
+          python main.py
