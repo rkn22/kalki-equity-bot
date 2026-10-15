@@ -516,4 +516,4 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     action, symbol = data.split("_")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%")
