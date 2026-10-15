@@ -2,6 +2,8 @@ import os
 import sys
 import datetime
 import threading
+import sqlite3
+import time
 import pandas as pd
 import numpy as np
 from flask import Flask
@@ -22,14 +24,76 @@ if CHAT_ID:
     except ValueError:
         pass
 
-# In-memory trade journal log (automatically tracks wins and losses)
-TRADE_JOURNAL = []
+# --- SQLITE DATABASE SETUP (Permanent Storage) ---
+DB_FILE = "kalki_trades.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            symbol TEXT,
+            entry_price REAL,
+            target REAL,
+            stoploss REAL,
+            status TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_trade_db(timestamp, symbol, entry, target, sl, status):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO trades (timestamp, symbol, entry_price, target, stoploss, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (timestamp, symbol, entry, target, sl, status))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Insert Error: {e}")
+
+def update_trade_status_db(symbol, status):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE trades SET status = ? 
+            WHERE symbol = ? AND status = 'ACTIVE ⏳'
+        """, (status, symbol))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Update Error: {e}")
+
+def fetch_metrics_db(days=30):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM trades WHERE status != 'ACTIVE ⏳'")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        total = len(rows)
+        wins = sum(1 for r in rows if "TARGET" in r[0])
+        losses = total - wins
+        success_rate = round((wins / total) * 100, 1) if total > 0 else 0.0
+        return {"total": total, "wins": wins, "losses": losses, "success_rate": success_rate}
+    except Exception as e:
+        print(f"DB Fetch Error: {e}")
+        return {"total": 0, "wins": wins if 'wins' in locals() else 0, "losses": 0, "success_rate": 0.0}
 
 # Keep Alive Server for Render
 keep_app = Flask('')
 @keep_app.route('/')
 def home():
-    return "JAI SHRI KALKI REPORT-POWERED BOT LIVE 🟢"
+    return "JAI SHRI KALKI PERMANENT DB & TRACKER BOT LIVE 🟢"
 
 def run_flask():
     keep_app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
@@ -217,11 +281,15 @@ def get_btst_call():
         return candidates[0]
     return ["SOUTHBANK", 28.5, 30.2, 27.5, "94%", "Volume Spike + Closing Near High + OI Support", 6]
 
-# --- TELEGRAM DISPATCHERS WITH INTERACTIVE BUTTONS ---
+# --- TELEGRAM DISPATCHERS WITH CUSTOM FORMAT & REAL DATE ---
 
 async def send_monthly_report_call(bot):
     c = get_monthly_call()
-    msg = "🏆 BEST 1-MONTHLY EQUITY SWING CALL (Within ₹500)\n"
+    current_date = datetime.datetime.now().strftime("%d %B %Y")
+    log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+
+    msg = f"*JAY SHREE KALKI* ({current_date})\n"
+    msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL \n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"📌 Stock: {c[0]}\n"
     msg += f"   • Buy Above: ₹{c[1]}\n"
@@ -229,7 +297,8 @@ async def send_monthly_report_call(bot):
     msg += f"   • StopLoss 🛑: ₹{c[3]} (ATR Dynamic SL)\n"
     msg += f"   • Accuracy: {c[4]} (OI PCR & Institutional Filtered)\n"
     msg += f"   • Logic: {c[5]}\n\n"
-    msg += "⚠️ Filtered via Live Option Chain OI PCR, Market Breadth & ATR Confluence.\nJAI SHRI KALKI! 🙏"
+    msg += "⚠️ Filtered via Live Option Chain OI PCR, Market Breadth & ATR Confluence.\n"
+    msg += "JAI SHRI KALKI! 🙏"
     
     keyboard = [
         [
@@ -240,13 +309,18 @@ async def send_monthly_report_call(bot):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     for cid in list(CHAT_IDS):
-        try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup)
+        try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
         except Exception as e: print(f"Error: {e}")
 
 async def send_intraday_report(bot):
     calls = get_intraday_calls()
+    current_date = datetime.datetime.now().strftime("%d %B %Y")
+    for c in calls:
+        log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+
     for i, c in enumerate(calls, 1):
-        msg = f"⚡ INTRADAY CASH CALL #{i} (Within ₹300)\n"
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += f"⚡ INTRADAY CASH CALL #{i} (Within ₹300)\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         msg += f"📌 Stock: {c[0]}\n"
         msg += f"   • Entry: ₹{c[1]}\n"
@@ -254,7 +328,8 @@ async def send_intraday_report(bot):
         msg += f"   • StopLoss 🛑: ₹{c[3]}\n"
         msg += f"   • Accuracy: {c[4]} (OI PCR Filtered)\n"
         msg += f"   • Pattern: {c[5]}\n\n"
-        msg += "⚠️ Exit before 3:15 PM. JAI SHRI KALKI! 🙏"
+        msg += "⚠️ Exit before 3:15 PM.\n"
+        msg += "JAI SHRI KALKI! 🙏"
 
         keyboard = [
             [
@@ -265,12 +340,16 @@ async def send_intraday_report(bot):
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         for cid in list(CHAT_IDS):
-            try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup)
+            try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
             except Exception as e: print(f"Error: {e}")
 
 async def send_btst_report(bot):
     c = get_btst_call()
-    msg = "🌙 BEST 1 BTST CALL (Buy Today, Sell Tomorrow)\n"
+    current_date = datetime.datetime.now().strftime("%d %B %Y")
+    log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+
+    msg = f"*JAY SHREE KALKI* ({current_date})\n"
+    msg += "🌙 BEST 1 BTST CALL (Buy Today, Sell Tomorrow)\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"📌 Stock: {c[0]}\n"
     msg += f"   • Buy Price: ₹{c[1]}\n"
@@ -278,7 +357,8 @@ async def send_btst_report(bot):
     msg += f"   • StopLoss 🛑: ₹{c[3]}\n"
     msg += f"   • Accuracy: {c[4]} (OI PCR Filtered)\n"
     msg += f"   • Pattern: {c[5]}\n\n"
-    msg += "💡 Execute between 3:15 PM - 3:25 PM & exit tomorrow morning.\nJAI SHRI KALKI! 🙏"
+    msg += "💡 Execute between 3:15 PM - 3:25 PM & exit tomorrow morning.\n"
+    msg += "JAI SHRI KALKI! 🙏"
 
     keyboard = [
         [
@@ -289,56 +369,88 @@ async def send_btst_report(bot):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     for cid in list(CHAT_IDS):
-        try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup)
+        try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
         except Exception as e: print(f"Error: {e}")
 
-# --- ANALYTICAL WEEKLY & MONTHLY REPORT GENERATORS ---
+# --- AUTOMATED BACKGROUND TARGET / SL CHECKER ---
 
-def generate_performance_metrics(days=7):
-    if not TRADE_JOURNAL:
-        return {"total": 0, "wins": 0, "losses": 0, "success_rate": 0.0}
-    
-    total = len(TRADE_JOURNAL)
-    wins = sum(1 for t in TRADE_JOURNAL if "TARGET" in t['status'])
-    losses = total - wins
-    success_rate = round((wins / total) * 100, 1) if total > 0 else 0.0
-    
-    return {
-        "total": total,
-        "wins": wins,
-        "losses": losses,
-        "success_rate": success_rate
-    }
+def start_background_tracker(application):
+    def tracker_worker():
+        while True:
+            try:
+                now = datetime.datetime.now()
+                if now.weekday() < 5 and 9 <= now.hour <= 15:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT symbol, target, stoploss FROM trades WHERE status = 'ACTIVE ⏳'")
+                    active_trades = cursor.fetchall()
+                    conn.close()
+
+                    for symbol, target, sl in active_trades:
+                        ltp = nse_quote_ltp(symbol)
+                        if ltp:
+                            ltp_val = float(ltp)
+                            status_update = None
+                            if ltp_val >= target:
+                                status_update = "TARGET HIT ✅ (Auto)"
+                            elif ltp_val <= sl:
+                                status_update = "STOPLOSS HIT ❌ (Auto)"
+
+                            if status_update:
+                                update_trade_status_db(symbol, status_update)
+                                notification = f"*JAY SHREE KALKI* (Auto Update)\n🚨 **TRADE UPDATE**\n📌 Stock: **{symbol}**\n📊 LTP: ₹{ltp_val}\nStatus: **{status_update}**\nJAI SHRI KALKI! 🙏"
+                                for cid in CHAT_IDS:
+                                    try:
+                                        import asyncio
+                                        asyncio.run_coroutine_threadsafe(
+                                            application.bot.send_message(chat_id=cid, text=notification, parse_mode="Markdown"),
+                                            application.loop
+                                        )
+                                    except Exception:
+                                        pass
+            except Exception as e:
+                print(f"Background tracker error: {e}")
+            
+            time.sleep(300)
+
+    t = threading.Thread(target=tracker_worker, daemon=True)
+    t.start()
+
+# --- ANALYTICAL REPORTS ---
 
 async def cmd_weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    metrics = generate_performance_metrics(days=7)
-    msg = "📈 **KALKI EQUITY BOT - WEEKLY PERFORMANCE REPORT**\n"
+    metrics = fetch_metrics_db(days=7)
+    current_date = datetime.datetime.now().strftime("%d %B %Y")
+    msg = f"*JAY SHREE KALKI* ({current_date})\n"
+    msg += "📈 **KALKI EQUITY BOT - WEEKLY PERFORMANCE REPORT**\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"📋 Total Calls Tracked: {metrics['total']}\n"
     msg += f"✅ Targets Hit (Wins): {metrics['wins']}\n"
     msg += f"❌ StopLoss Hit (Losses): {metrics['losses']}\n"
     msg += f"🎯 **Success / Win Rate:** **{metrics['success_rate']}%**\n"
     msg += f"⚡ **Algorithm Accuracy Score:** **92.5%**\n\n"
-    msg += "💡 *Note: Data compiled automatically from your Telegram button logs and live NSE website verification.*\n"
+    msg += "💡 *Note: Compiled automatically from permanent SQLite database and live market verification.*\n"
     msg += "JAI SHRI KALKI! 🙏"
     
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def cmd_monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    metrics = generate_performance_metrics(days=30)
-    msg = "🏆 **KALKI EQUITY BOT - MONTHLY PERFORMANCE REPORT**\n"
+    metrics = fetch_metrics_db(days=30)
+    current_date = datetime.datetime.now().strftime("%d %B %Y")
+    msg = f"*JAY SHREE KALKI* ({current_date})\n"
+    msg += "🏆 **KALKI EQUITY BOT - MONTHLY PERFORMANCE REPORT**\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg += f"📋 Total Calls Tracked: {metrics['total']}\n"
     msg += f"✅ Targets Hit (Wins): {metrics['wins']}\n"
     msg += f"❌ StopLoss Hit (Losses): {metrics['losses']}\n"
     msg += f"🎯 **Success / Win Rate:** **{metrics['success_rate']}%**\n"
     msg += f"⚡ **Algorithm Accuracy Score:** **94.2%**\n\n"
-    msg += "💡 *Note: Comprehensive monthly review generated from NSE market data & user feedback logs.*\n"
+    msg += "💡 *Note: Comprehensive monthly review saved permanently in database.*\n"
     msg += "JAI SHRI KALKI! 🙏"
     
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
-# --- CALLBACK QUERY HANDLER ---
+# --- CALLBACK & JOURNAL HANDLERS ---
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -350,7 +462,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     result_status = "TARGET HIT ✅" if action == "TGT" else "STOPLOSS HIT ❌"
     
-    TRADE_JOURNAL.append({"timestamp": timestamp, "symbol": symbol, "status": result_status})
+    update_trade_status_db(symbol, result_status)
     
     new_text = query.message.text + f"\n\n📌 **Feedback Recorded:** {symbol} marked as **{result_status}** at {timestamp} 🙏"
     try:
@@ -359,20 +471,31 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not TRADE_JOURNAL:
-        await update.message.reply_text("📋 Trade Journal is currently empty. Tap buttons on calls to record results!")
-        return
-    
-    msg = "📊 **Kalki Trade Journal Log:**\n\n"
-    for t in TRADE_JOURNAL:
-        msg += f"• {t['timestamp']} | **{t['symbol']}** | {t['status']}\n"
-    
-    await update.message.reply_text(msg)
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp, symbol, status FROM trades ORDER BY id DESC LIMIT 15")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            await update.message.reply_text("📋 Trade Journal database is currently empty.")
+            return
+
+        current_date = datetime.datetime.now().strftime("%d %B %Y")
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += "📊 **Kalki Permanent Trade Journal:**\n\n"
+        for r in rows:
+            msg += f"• {r[0]} | **{r[1]}** | {r[2]}\n"
+        
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"Error reading journal: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat:
         CHAT_IDS.add(update.effective_chat.id)
-        await update.message.reply_text("JAI SHRI KALKI! Report-Powered Bot Live 🟢\nCommands:\n/monthlycall - 1-Month Swing Call\n/intraday - 2 Intraday Cash Calls\n/btst - 1 BTST Call\n/weekly - Weekly Success Report\n/monthly - Monthly Success Report\n/journal - View Recorded Results")
+        await update.message.reply_text("JAI SHRI KALKI! Permanent DB Bot Live 🟢\nCommands:\n/monthlycall - 1-Month Swing Call\n/intraday - 2 Intraday Cash Calls\n/btst - 1 BTST Call\n/weekly - Weekly Success Report\n/monthly - Monthly Success Report\n/journal - View Saved Database Logs")
 
 async def cmd_monthly_call(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat: CHAT_IDS.add(update.effective_chat.id)
@@ -418,6 +541,8 @@ def main():
     app.add_handler(CommandHandler("monthly", cmd_monthly_report))
     app.add_handler(CommandHandler("journal", cmd_journal))
     app.add_handler(CallbackQueryHandler(button_callback))
+
+    start_background_tracker(app)
 
     app.run_polling()
 
