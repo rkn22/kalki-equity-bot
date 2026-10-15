@@ -218,7 +218,7 @@ def analyze_stock_accuracy(symbol):
         print(f"Error analyzing {symbol}: {e}")
         return None
 
-# --- RESEARCH SIGNALS WITH DETAILED NO-MATCH AUDIT ---
+# --- RESEARCH SIGNALS WITH AUDIT ---
 
 def get_monthly_call_scanned():
     watch_list = ["TATASTEEL", "FEDERALBNK", "PNB", "IDFCFIRSTB", "GAIL", "NTPC", "NMDC", "BEL", "IOC", "SAIL"]
@@ -320,17 +320,19 @@ async def send_monthly_report_call(bot):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
     else:
-        acc_text = f"{min(98, 84 + int(best_failed['score'] * 1.4))}%" if best_failed else "N/A"
+        acc_text = best_failed['accuracy'] if best_failed else "N/A"
         stock_name = best_failed['symbol'] if best_failed else "None"
+        price_val = best_failed['price'] if best_failed else 0
         score_val = best_failed['score'] if best_failed else 0
         
         msg = f"*JAY SHREE KALKI* ({current_date})\n"
         msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL \n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         msg += "⚠️ **NO TRADE CALL GENERATED TODAY**\n\n"
-        msg += f"• **Highest Accuracy Matched:** {acc_text} (Score: {score_val}/7)\n"
+        msg += f"• **Highest Accuracy Matched:** {acc_text}\n"
         msg += f"• **Closest Equity Scanned:** {stock_name}\n"
-        msg += "• **Reason:** Strict 7-factor confluence criteria (Score >= 5) not fully met.\n\n"
+        msg += f"• **Stock Details:** Price: ₹{price_val} | Confluence Score: {score_val}/7\n"
+        msg += "• **Result / Reason:** Strict criteria (Score >= 5) not met. Hence, No Trade Call.\n\n"
         msg += "🛡️ Capital Protection Priority! JAI SHRI KALKI! 🙏"
         reply_markup = None
 
@@ -373,17 +375,19 @@ async def send_intraday_report(bot):
                 except Exception as e: 
                     print(f"Error: {e}")
     else:
-        acc_text = f"{min(98, 84 + int(best_failed['score'] * 1.4))}%" if best_failed else "N/A"
+        acc_text = best_failed['accuracy'] if best_failed else "N/A"
         stock_name = best_failed['symbol'] if best_failed else "None"
+        price_val = best_failed['price'] if best_failed else 0
         score_val = best_failed['score'] if best_failed else 0
 
         msg = f"*JAY SHREE KALKI* ({current_date})\n"
         msg += "⚡ INTRADAY CASH CALLS\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         msg += "⚠️ **NO INTRADAY CALLS GENERATED TODAY**\n\n"
-        msg += f"• **Highest Accuracy Matched:** {acc_text} (Score: {score_val}/7)\n"
+        msg += f"• **Highest Accuracy Matched:** {acc_text}\n"
         msg += f"• **Closest Equity Scanned:** {stock_name}\n"
-        msg += "• **Reason:** Strict intraday confluence threshold not met.\n\n"
+        msg += f"• **Stock Details:** Price: ₹{price_val} | Confluence Score: {score_val}/7\n"
+        msg += "• **Result / Reason:** Strict intraday threshold not met. Hence, No Trade Call.\n\n"
         msg += "🛡️ Capital Protection Priority! JAI SHRI KALKI! 🙏"
         
         for cid in list(CHAT_IDS):
@@ -418,17 +422,19 @@ async def send_btst_report(bot):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
     else:
-        acc_text = f"{min(98, 84 + int(best_failed['score'] * 1.4))}%" if best_failed else "N/A"
+        acc_text = best_failed['accuracy'] if best_failed else "N/A"
         stock_name = best_failed['symbol'] if best_failed else "None"
+        price_val = best_failed['price'] if best_failed else 0
         score_val = best_failed['score'] if best_failed else 0
 
         msg = f"*JAY SHREE KALKI* ({current_date})\n"
         msg += "🌙 BEST 1 BTST CALL\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         msg += "⚠️ **NO BTST CALL GENERATED TODAY**\n\n"
-        msg += f"• **Highest Accuracy Matched:** {acc_text} (Score: {score_val}/7)\n"
+        msg += f"• **Highest Accuracy Matched:** {acc_text}\n"
         msg += f"• **Closest Equity Scanned:** {stock_name}\n"
-        msg += "• **Reason:** Strict BTST confluence criteria not met.\n\n"
+        msg += f"• **Stock Details:** Price: ₹{price_val} | Confluence Score: {score_val}/7\n"
+        msg += "• **Result / Reason:** Strict BTST criteria not met. Hence, No Trade Call.\n\n"
         msg += "🛡️ Capital Protection Priority! JAI SHRI KALKI! 🙏"
         reply_markup = None
 
@@ -516,4 +522,89 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     action, symbol = data.split("_")
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    result_status = "TARGET HIT ✅" if action == "TGT" else "STOPLOSS HIT ❌"
+    update_trade_status_db(symbol, result_status)
+    new_text = query.message.text + f"\n\n📌 **Feedback Recorded:** {symbol} marked as **{result_status}** at {timestamp} 🙏"
+    try:
+        await query.edit_message_text(text=new_text, reply_markup=None)
+    except Exception:
+        pass
+
+async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp, symbol, status FROM trades ORDER BY id DESC LIMIT 15")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            await update.message.reply_text("📋 Trade Journal database is currently empty.")
+            return
+
+        current_date = datetime.datetime.now().strftime("%d %B %Y")
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += "📊 **Kalki Permanent Trade Journal:**\n\n"
+        for r in rows:
+            msg += f"• {r[0]} | **{r[1]}** | {r[2]}\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"Error reading journal: {e}")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat:
+        CHAT_IDS.add(update.effective_chat.id)
+        await update.message.reply_text("JAI SHRI KALKI! Permanent DB Bot Live 🟢\nCommands:\n/monthlycall - 1-Month Swing Call\n/intraday - 2 Intraday Cash Calls\n/btst - 1 BTST Call\n/weekly - Weekly Success Report\n/monthly - Monthly Success Report\n/journal - View Saved Database Logs")
+
+async def cmd_monthly_call(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat: CHAT_IDS.add(update.effective_chat.id)
+    await send_monthly_report_call(context.bot)
+
+async def cmd_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat: CHAT_IDS.add(update.effective_chat.id)
+    await send_intraday_report(context.bot)
+
+async def cmd_btst(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat: CHAT_IDS.add(update.effective_chat.id)
+    await send_btst_report(context.bot)
+
+def main():
+    if not BOT_TOKEN:
+        print("ERROR: BOT_TOKEN is missing!")
+        return
+
+    if RUN_MODE in ["MONTHLY", "INTRADAY", "BTST"]:
+        print(f"Running single execution for mode: {RUN_MODE}")
+        app = Application.builder().token(BOT_TOKEN).build()
+        async def run_once():
+            async with app:
+                await app.initialize()
+                if RUN_MODE == "MONTHLY":
+                    await send_monthly_report_call(app.bot)
+                elif RUN_MODE == "INTRADAY":
+                    await send_intraday_report(app.bot)
+                elif RUN_MODE == "BTST":
+                    await send_btst_report(app.bot)
+                await asyncio.sleep(1.5)
+        
+        asyncio.run(run_once())
+        sys.exit(0)
+
+    threading.Thread(target=run_flask, daemon=True).start()
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("monthlycall", cmd_monthly_call))
+    app.add_handler(CommandHandler("intraday", cmd_intraday))
+    app.add_handler(CommandHandler("btst", cmd_btst))
+    app.add_handler(CommandHandler("weekly", cmd_weekly_report))
+    app.add_handler(CommandHandler("monthly", cmd_monthly_report))
+    app.add_handler(CommandHandler("journal", cmd_journal))
+    app.add_handler(CallbackQueryHandler(button_callback))
+
+    start_background_tracker(app)
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
