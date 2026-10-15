@@ -16,7 +16,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 RUN_MODE = os.getenv("RUN_MODE", "ALL")
 
-# Initialize CHAT_IDS safely
 CHAT_IDS = set()
 if CHAT_ID:
     try:
@@ -24,7 +23,6 @@ if CHAT_ID:
     except ValueError:
         pass
 
-# --- SQLITE DATABASE SETUP (Permanent Storage) ---
 DB_FILE = "kalki_trades.db"
 
 def init_db():
@@ -89,7 +87,6 @@ def fetch_metrics_db(days=30):
         print(f"DB Fetch Error: {e}")
         return {"total": 0, "wins": 0, "losses": 0, "success_rate": 0.0}
 
-# Keep Alive Server for Render
 keep_app = Flask('')
 @keep_app.route('/')
 def home():
@@ -97,8 +94,6 @@ def home():
 
 def run_flask():
     keep_app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
-
-# --- PROFESSIONAL NSE & OPEN INTEREST (OI) ENGINE ---
 
 def fetch_nse_historical_data(symbol):
     try:
@@ -213,7 +208,7 @@ def analyze_stock_accuracy(symbol):
         return {
             "symbol": symbol,
             "price": round(close_price, 2),
-            "atr": round(atr_val, 2),
+            "atr": atr_val,
             "accuracy": f"{accuracy}%",
             "score": confluence_score,
             "is_valid": confluence_score >= 4
@@ -222,14 +217,14 @@ def analyze_stock_accuracy(symbol):
         print(f"Error analyzing {symbol}: {e}")
         return None
 
-# --- DYNAMIC SIGNAL GENERATORS (NO STATIC FALLBACKS) ---
+# --- RESEARCH SIGNALS ---
 
 def get_monthly_call():
-    watch_list = ["TATASTEEL", "FEDERALBNK", "PNB", "IDFCFIRSTB", "GAIL", "NTPC", "NMDC", "IOC", "BEL", "NATIONALUM"]
+    watch_list = ["TATASTEEL", "FEDERALBNK", "PNB", "IDFCFIRSTB", "GAIL", "NTPC", "NMDC", "BEL", "IOC", "SAIL"]
     candidates = []
     for s in watch_list:
         res = analyze_stock_accuracy(s)
-        if res:
+        if res and res['is_valid']:
             entry = res['price']
             atr = res['atr']
             sl = round(entry - (1.5 * atr), 1)
@@ -242,11 +237,11 @@ def get_monthly_call():
     return None
 
 def get_intraday_calls():
-    watch_list = ["NMDC", "PNB", "IOC", "SOUTHBANK", "UNIONBANK", "IDFCFIRSTB", "TATASTEEL", "GAIL", "BEL", "FEDERALBNK"]
+    watch_list = ["NMDC", "PNB", "IOC", "SOUTHBANK", "UNIONBANK", "IDFCFIRSTB", "GAIL", "NATIONALUM", "TATASTEEL"]
     candidates = []
     for s in watch_list:
         res = analyze_stock_accuracy(s)
-        if res:
+        if res and res['is_valid']:
             entry = res['price']
             atr = res['atr']
             tgt = round(entry + (1.5 * atr), 1)
@@ -254,16 +249,14 @@ def get_intraday_calls():
             candidates.append([s, entry, tgt, sl, res['accuracy'], "15-Min ORB + OI Support + ATR Guard", res['score']])
     
     candidates.sort(key=lambda x: x[6], reverse=True)
-    if candidates:
-        return candidates[:2]
-    return []
+    return candidates[:2] if candidates else []
 
 def get_btst_call():
-    watch_list = ["SOUTHBANK", "GAIL", "BEL", "NATIONALUM", "TATASTEEL", "PNB", "FEDERALBNK", "NMDC"]
+    watch_list = ["SOUTHBANK", "GAIL", "BEL", "NATIONALUM", "TATASTEEL", "PNB", "NMDC"]
     candidates = []
     for s in watch_list:
         res = analyze_stock_accuracy(s)
-        if res:
+        if res and res['is_valid']:
             entry = res['price']
             atr = res['atr']
             tgt = round(entry + (2.0 * atr), 1)
@@ -275,39 +268,40 @@ def get_btst_call():
         return candidates[0]
     return None
 
-# --- TELEGRAM DISPATCHERS WITH CLEAN HEADINGS ---
+# --- TELEGRAM DISPATCHERS ---
 
 async def send_monthly_report_call(bot):
     c = get_monthly_call()
     current_date = datetime.datetime.now().strftime("%d %B %Y")
     
-    if not c:
-        for cid in list(CHAT_IDS):
-            try: await bot.send_message(chat_id=cid, text=f"*JAY SHREE KALKI* ({current_date})\n\n⚠️ Live market scan complete. No high-conviction Monthly Swing setups meet criteria today.", parse_mode="Markdown")
-            except Exception: pass
-        return
-
-    log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
-
-    msg = f"*JAY SHREE KALKI* ({current_date})\n"
-    msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
-    msg += f"📌 Stock: {c[0]}\n"
-    msg += f"   • Buy Above: ₹{c[1]}\n"
-    msg += f"   • Target 🎯: ₹{c[2]} (ATR Optimized)\n"
-    msg += f"   • StopLoss 🛑: ₹{c[3]} (ATR Dynamic SL)\n"
-    msg += f"   • Accuracy: {c[4]} (OI PCR & Institutional Filtered)\n"
-    msg += f"   • Logic: {c[5]}\n\n"
-    msg += "⚠️ Filtered via Live Option Chain OI PCR, Market Breadth & ATR Confluence.\n"
-    msg += "JAI SHRI KALKI! 🙏"
-    
-    keyboard = [
-        [
-            InlineKeyboardButton("Target Hit ✅", callback_data=f"TGT_{c[0]}"),
-            InlineKeyboardButton("SL Hit ❌", callback_data=f"SL_{c[0]}")
+    if c:
+        log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL \n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg += f"📌 Stock: {c[0]}\n"
+        msg += f"   • Buy Above: ₹{c[1]}\n"
+        msg += f"   • Target 🎯: ₹{c[2]} (ATR Optimized)\n"
+        msg += f"   • StopLoss 🛑: ₹{c[3]} (ATR Dynamic SL)\n"
+        msg += f"   • Accuracy: {c[4]} (OI PCR & Institutional Filtered)\n"
+        msg += f"   • Logic: {c[5]}\n\n"
+        msg += "⚠️ Filtered via Live Option Chain OI PCR, Market Breadth & ATR Confluence.\n"
+        msg += "JAI SHRI KALKI! 🙏"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("Target Hit ✅", callback_data=f"TGT_{c[0]}"),
+                InlineKeyboardButton("SL Hit ❌", callback_data=f"SL_{c[0]}")
+            ]
         ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = InlineKeyboardMarkup(keyboard)
+    else:
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += "🏆 BEST 1-MONTHLY EQUITY SWING CALL \n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg += "⚠️ No stocks matched strict confluence criteria today.\n"
+        msg += "Capital Protection Priority! JAI SHRI KALKI! 🙏"
+        reply_markup = None
 
     for cid in list(CHAT_IDS):
         try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
@@ -316,27 +310,59 @@ async def send_monthly_report_call(bot):
 async def send_intraday_report(bot):
     calls = get_intraday_calls()
     current_date = datetime.datetime.now().strftime("%d %B %Y")
-    
-    if not calls:
-        for cid in list(CHAT_IDS):
-            try: await bot.send_message(chat_id=cid, text=f"*JAY SHREE KALKI* ({current_date})\n\n⚠️ Live market scan complete. No high-conviction Intraday setups meet criteria right now.", parse_mode="Markdown")
-            except Exception: pass
-        return
 
-    for c in calls:
-        log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+    if calls:
+        for i, c in enumerate(calls, 1):
+            log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+            msg = f"*JAY SHREE KALKI* ({current_date})\n"
+            msg += f"⚡ INTRADAY CASH CALL #{i}\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            msg += f"📌 Stock: {c[0]}\n"
+            msg += f"   • Entry: ₹{c[1]}\n"
+            msg += f"   • Target 🎯: ₹{c[2]}\n"
+            msg += f"   • StopLoss 🛑: ₹{c[3]}\n"
+            msg += f"   • Accuracy: {c[4]} (OI PCR Filtered)\n"
+            msg += f"   • Pattern: {c[5]}\n\n"
+            msg += "⚠️ Exit before 3:15 PM.\n"
+            msg += "JAI SHRI KALKI! 🙏"
 
-    for i, c in enumerate(calls, 1):
+            keyboard = [
+                [
+                    InlineKeyboardButton("Target Hit ✅", callback_data=f"TGT_{c[0]}"),
+                    InlineKeyboardButton("SL Hit ❌", callback_data=f"SL_{c[0]}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            for cid in list(CHAT_IDS):
+                try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
+                except Exception as e: print(f"Error: {e}")
+    else:
         msg = f"*JAY SHREE KALKI* ({current_date})\n"
-        msg += f"⚡ INTRADAY CASH CALL #{i}\n"
+        msg += "⚡ INTRADAY CASH CALLS\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg += "⚠️ No stocks matched intraday confluence criteria right now.\n"
+        msg += "JAI SHRI KALKI! 🙏"
+        for cid in list(CHAT_IDS):
+            try: await bot.send_message(chat_id=cid, text=msg, parse_mode="Markdown")
+            except Exception as e: print(f"Error: {e}")
+
+async def send_btst_report(bot):
+    c = get_btst_call()
+    current_date = datetime.datetime.now().strftime("%d %B %Y")
+
+    if c:
+        log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += "🌙 BEST 1 BTST CALL (Buy Today, Sell Tomorrow)\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         msg += f"📌 Stock: {c[0]}\n"
-        msg += f"   • Entry: ₹{c[1]}\n"
-        msg += f"   • Target 🎯: ₹{c[2]}\n"
+        msg += f"   • Buy Price: ₹{c[1]}\n"
+        msg += f"   • Tomorrow Target 🎯: ₹{c[2]}\n"
         msg += f"   • StopLoss 🛑: ₹{c[3]}\n"
         msg += f"   • Accuracy: {c[4]} (OI PCR Filtered)\n"
         msg += f"   • Pattern: {c[5]}\n\n"
-        msg += "⚠️ Exit before 3:15 PM.\n"
+        msg += "💡 Execute between 3:15 PM - 3:25 PM & exit tomorrow morning.\n"
         msg += "JAI SHRI KALKI! 🙏"
 
         keyboard = [
@@ -346,42 +372,13 @@ async def send_intraday_report(bot):
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        for cid in list(CHAT_IDS):
-            try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
-            except Exception as e: print(f"Error: {e}")
-
-async def send_btst_report(bot):
-    c = get_btst_call()
-    current_date = datetime.datetime.now().strftime("%d %B %Y")
-    
-    if not c:
-        for cid in list(CHAT_IDS):
-            try: await bot.send_message(chat_id=cid, text=f"*JAY SHREE KALKI* ({current_date})\n\n⚠️ Live market scan complete. No high-conviction BTST setups found.", parse_mode="Markdown")
-            except Exception: pass
-        return
-
-    log_trade_db(current_date, c[0], c[1], c[2], c[3], "ACTIVE ⏳")
-
-    msg = f"*JAY SHREE KALKI* ({current_date})\n"
-    msg += "🌙 BEST 1 BTST CALL (Buy Today, Sell Tomorrow)\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
-    msg += f"📌 Stock: {c[0]}\n"
-    msg += f"   • Buy Price: ₹{c[1]}\n"
-    msg += f"   • Tomorrow Target 🎯: ₹{c[2]}\n"
-    msg += f"   • StopLoss 🛑: ₹{c[3]}\n"
-    msg += f"   • Accuracy: {c[4]} (OI PCR Filtered)\n"
-    msg += f"   • Pattern: {c[5]}\n\n"
-    msg += "💡 Execute between 3:15 PM - 3:25 PM & exit tomorrow morning.\n"
-    msg += "JAI SHRI KALKI! 🙏"
-
-    keyboard = [
-        [
-            InlineKeyboardButton("Target Hit ✅", callback_data=f"TGT_{c[0]}"),
-            InlineKeyboardButton("SL Hit ❌", callback_data=f"SL_{c[0]}")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    else:
+        msg = f"*JAY SHREE KALKI* ({current_date})\n"
+        msg += "🌙 BEST 1 BTST CALL\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        msg += "⚠️ No high-conviction BTST setup detected for today.\n"
+        msg += "JAI SHRI KALKI! 🙏"
+        reply_markup = None
 
     for cid in list(CHAT_IDS):
         try: await bot.send_message(chat_id=cid, text=msg, reply_markup=reply_markup, parse_mode="Markdown")
@@ -431,7 +428,7 @@ def start_background_tracker(application):
     t = threading.Thread(target=tracker_worker, daemon=True)
     t.start()
 
-# --- ANALYTICAL REPORTS ---
+# --- ANALYTICAL REPORTS & HANDLERS ---
 
 async def cmd_weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     metrics = fetch_metrics_db(days=7)
@@ -444,9 +441,7 @@ async def cmd_weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"❌ StopLoss Hit (Losses): {metrics['losses']}\n"
     msg += f"🎯 **Success / Win Rate:** **{metrics['success_rate']}%**\n"
     msg += f"⚡ **Algorithm Accuracy Score:** **92.5%**\n\n"
-    msg += "💡 *Note: Compiled automatically from permanent SQLite database and live market verification.*\n"
     msg += "JAI SHRI KALKI! 🙏"
-    
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def cmd_monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -460,25 +455,17 @@ async def cmd_monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE)
     msg += f"❌ StopLoss Hit (Losses): {metrics['losses']}\n"
     msg += f"🎯 **Success / Win Rate:** **{metrics['success_rate']}%**\n"
     msg += f"⚡ **Algorithm Accuracy Score:** **94.2%**\n\n"
-    msg += "💡 *Note: Comprehensive monthly review saved permanently in database.*\n"
     msg += "JAI SHRI KALKI! 🙏"
-    
     await update.message.reply_text(msg, parse_mode="Markdown")
-
-# --- CALLBACK & JOURNAL HANDLERS ---
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     data = query.data
     action, symbol = data.split("_")
-    
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     result_status = "TARGET HIT ✅" if action == "TGT" else "STOPLOSS HIT ❌"
-    
     update_trade_status_db(symbol, result_status)
-    
     new_text = query.message.text + f"\n\n📌 **Feedback Recorded:** {symbol} marked as **{result_status}** at {timestamp} 🙏"
     try:
         await query.edit_message_text(text=new_text, reply_markup=None)
@@ -502,7 +489,6 @@ async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += "📊 **Kalki Permanent Trade Journal:**\n\n"
         for r in rows:
             msg += f"• {r[0]} | **{r[1]}** | {r[2]}\n"
-        
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"Error reading journal: {e}")
@@ -521,4 +507,8 @@ async def cmd_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_intraday_report(context.bot)
 
 async def cmd_btst(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat: CHAT_I
+    if update.effective_chat: CHAT_IDS.add(update.effective_chat.id)
+    await send_btst_report(context.bot)
+
+def main():
+    i
