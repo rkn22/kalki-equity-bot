@@ -11,7 +11,7 @@ on:
         options:
           - 1-monthly-call
           - 2-intraday-calls
-          - 1-btst-call
+          - 3-btst-call
   schedule:
     - cron: '45 3 * * 1-5'  # 09:15 AM IST (Morning Calls)
     - cron: '45 9 * * 1-5'  # 03:15 PM IST (BTST Call)
