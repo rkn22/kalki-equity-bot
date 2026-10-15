@@ -12,6 +12,7 @@ import yfinance as yf
 from nsepython import nse_eq, nse_quote_ltp, nse_optionchain_scrapper, pcr
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.request import HTTPXRequest
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -574,9 +575,12 @@ def main():
         print("ERROR: BOT_TOKEN is missing!")
         return
 
+    # Extended request timeout configuration to prevent TimedOut errors on GitHub Actions
+    custom_request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0, pool_timeout=30.0)
+
     if RUN_MODE in ["MONTHLY", "INTRADAY", "BTST"]:
         print(f"Running single execution for mode: {RUN_MODE}")
-        app = Application.builder().token(BOT_TOKEN).build()
+        app = Application.builder().token(BOT_TOKEN).request(custom_request).build()
         async def run_once():
             async with app:
                 await app.initialize()
@@ -592,7 +596,7 @@ def main():
         sys.exit(0)
 
     threading.Thread(target=run_flask, daemon=True).start()
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).request(custom_request).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("monthlycall", cmd_monthly_call))
