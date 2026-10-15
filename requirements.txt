@@ -1,4 +1,4 @@
-nsepython==1.1.2
+nsepython>=2.93
 yfinance==0.2.38
 pandas==2.2.1
 numpy==1.26.4
