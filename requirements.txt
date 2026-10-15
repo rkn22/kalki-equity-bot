@@ -1,7 +1,8 @@
-nsepython>=2.93
-yfinance==0.2.38
-pandas==2.2.1
-numpy==1.26.4
-flask==3.0.2
-python-telegram-bot==20.8
-requests==2.31.0
+nsepython
+yfinance
+flask
+pandas
+numpy
+python-telegram-bot
+requests
+nselib
